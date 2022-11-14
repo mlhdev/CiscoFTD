@@ -1,0 +1,379 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy Cisco FTD in an existing VPC infrastructure.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: VPC Configuration
+        Parameters:
+          - VpcCidr
+          - MgmtSubnetCidr
+          - InsideSubnetCidr
+          - OutsideSubnetCidr
+          - KeyName
+      - Label:
+          default: Cisco FTD Configuration
+        Parameters:
+          - FTDVersion
+          - FTDLicType
+          - FTDInstanceType
+          - FTDHostname
+          - MgmtIp
+          - InsideIp
+          - OutsideIp
+          - MgmtExternalAccessCidr 
+    ParameterLabels:
+      VpcCidr:
+        default: VPC CIDR
+      FTDVersion:
+        default: FTD Version
+      FTDLicType:
+        default: FTD License Type
+      FTDInstanceType:
+        default: FTD Instance type
+      FTDHostname:
+        default: Hostname of the FTD
+      MgmtSubnetCidr:
+        default: Management subnet CIDR
+      MgmtIp:
+        default: Management interface IP address
+      FMCMgmtIp:
+        default: FMC Management interface IP address
+      InsideSubnetCidr:
+        default: Inside subnet CIDR
+      InsideIp:
+        default: Inside interface IP address
+      OutsideSubnetCidr:
+        default: Outside subnet CIDR
+      OutsideIp:
+        default: Outside interface IP address
+      MgmtExternalAccessCidr:
+        default: External management access CIDR
+      FMCHostname:
+        default: Hostname of the FMC
+Parameters:
+  VpcCidr:
+    Type: AWS::EC2::VPC::Id
+    Description: Select the VPC to use
+  MgmtSubnetCidr:
+    Description: Select the management subnet
+    Type: AWS::EC2::Subnet::Id
+  MgmtIp:
+    Description: Optionally provide an IP for the FTD management interface
+    Type: String
+    Default: 0.0.0.0
+    AllowedPattern: >-
+      ^((25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)$
+  FMCMgmtIp:
+    Description: Optionally provide an IP for the FMC management interface
+    Type: String
+    Default: 0.0.0.0
+    AllowedPattern: >-
+      ^((25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)$
+  InsideSubnetCidr:
+    Description: 'The inside subnet of the security gateway '
+    Type: AWS::EC2::Subnet::Id
+  InsideIp:
+    Description: Optionally provide an IP for the FTD inside interface
+    Type: String
+    Default: 0.0.0.0
+    AllowedPattern: >-
+      ^((25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)$
+  OutsideSubnetCidr:
+    Description: The outside subnet of the security gateway
+    Type: AWS::EC2::Subnet::Id
+  OutsideIp:
+    Description: Optionally provide an IP for the FTD outside interface
+    Type: String
+    Default: 0.0.0.0
+    AllowedPattern: >-
+      ^((25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)$
+
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to FTD
+    Type: AWS::EC2::KeyPair::KeyName
+  FTDVersion:
+    Description: Cisco FTDv Version
+    Type: String
+    Default: ftdv-7.0.1-84
+    AllowedValues:
+      - ftdv-7.0.1-84
+      - ftdv-7.0.2-88
+   FTDLicType:
+    Description: Cisco FTDv License Type
+    Type: String
+    Default: BYOL
+    AllowedValues:
+      - BYOL
+      - HOURLY
+  FTDInstanceType:
+    Description: Cisco FTDv EC2 instance type
+    Type: String
+    Default: c5.xlarge
+    AllowedValues:
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+
+  MgmtExternalAccessCidr:
+    Description: >-
+      CAUTION: By default, the management port is accessed from any public IP
+      addresses, Please restrict it to access it only from the specific IP
+      address
+    Type: String
+    AllowedPattern: >-
+      ^((25[0-5]|2[0-4][0-9]|[1]?[0-9][0-9]?)(\.|\/)){4}([0-9]|[1-2][0-9]|3[0-2])$
+    Default: 0.0.0.0/0
+Conditions:
+  UseStaticMgmtIp:
+    Fn::Not:
+      - Fn::Equals:
+          - 0.0.0.0
+          - Ref: MgmtIp
+  UseStaticInsideIp:
+    Fn::Not:
+      - Fn::Equals:
+          - 0.0.0.0
+          - Ref: InsideIp
+  UseStaticOutsideIp:
+    Fn::Not:
+      - Fn::Equals:
+          - 0.0.0.0
+          - Ref: OutsideIp
+
+Mappings:
+  KeynameMap:
+    ftdv-7.0.1-84:
+      BYOL: BYOLv70184
+    ftdv-7.0.2-88:
+      BYOL: BYOLv70288  
+
+  AWSAMIRegionMap:
+    AMI: 
+      BYOLv70184: ftdv-7.0.1-84-ENA-ad0af76e-c569-4a81-84d0-cff2308179ef    
+      BYOLv70288: ftdv-7.0.2-88-ENA-ad0af76e-c569-4a81-84d0-cff2308179ef    
+                 
+    us-east-1:    
+      BYOLv70288: ami-08ea05c69d041dd13
+    
+    us-west-2:  
+      BYOLv70184: ami-09b0f184a86ca95af
+      BYOLv70288: ami-013464d7306c3a0b5 
+Resources:
+  SecurityGroupAll:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all traffic on vpc1
+      VpcId:
+        Ref: VpcCidr
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Join:
+              - ''
+              - - Ref: AWS::StackName
+                - '-allow-all-vpc1'
+  sgManagementInterface:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow only traffic from MgmtExternalAccessCidr IP Ranges
+      VpcId:
+        Ref: VpcCidr
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp:
+            Ref: MgmtExternalAccessCidr
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp:
+            Ref: MgmtExternalAccessCidr
+        - IpProtocol: tcp
+          FromPort: '8305'
+          ToPort: '8305'
+          CidrIp:
+            Ref: MgmtExternalAccessCidr
+        - IpProtocol: tcp
+          FromPort: '8307'
+          ToPort: '8307'
+          CidrIp:
+            Ref: MgmtExternalAccessCidr
+        - IpProtocol: icmp
+          FromPort: '-1'
+          ToPort: '-1'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Join:
+              - ''
+              - - Ref: AWS::StackName
+                - '-allow-SSH-vpc1'
+  eipFTDMgmt:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain:
+        Ref: VpcCidr
+  eipaFTDMgmt:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - eipFTDMgmt
+          - AllocationId
+      NetworkInterfaceId:
+        Ref: eniFTDMgmt
+  eniFTDMgmt:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId:
+        Ref: MgmtSubnetCidr
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Join:
+              - ''
+              - - Ref: AWS::StackName
+                - '-MGMT'
+      PrivateIpAddress:
+        Fn::If:
+          - UseStaticMgmtIp
+          - Ref: MgmtIp
+          - Ref: AWS::NoValue
+      Description: Interface for management traffic of FTD
+      GroupSet:
+        - Ref: sgManagementInterface
+      SourceDestCheck: 'false'
+  eniFTDdiag:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId:
+        Ref: MgmtSubnetCidr
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Join:
+              - ''
+              - - Ref: AWS::StackName
+                - '-FMCDiag'
+      Description: Interface for diag traffic of FTD
+      GroupSet:
+        - Ref: sgManagementInterface
+      SourceDestCheck: 'false'
+  eniFTDInside:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId:
+        Ref: InsideSubnetCidr
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Join:
+              - ''
+              - - Ref: AWS::StackName
+                - '-FMCInside'
+      PrivateIpAddress:
+        Fn::If:
+          - UseStaticInsideIp
+          - Ref: InsideIp
+          - Ref: AWS::NoValue
+      Description: Inside Interface of FTD
+      GroupSet:
+        - Ref: SecurityGroupAll
+      SourceDestCheck: 'false'
+  eniFTDOutside:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId:
+        Ref: OutsideSubnetCidr
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Join:
+              - ''
+              - - Ref: AWS::StackName
+                - '-FMCOutside'
+      PrivateIpAddress:
+        Fn::If:
+          - UseStaticOutsideIp
+          - Ref: OutsideIp
+          - Ref: AWS::NoValue
+      Description: Outside Interface of FTD
+      GroupSet:
+        - Ref: SecurityGroupAll
+      SourceDestCheck: 'false'
+
+  CiscoFTD:
+    Type: AWS::EC2::Instance
+    Properties:
+      DisableApiTermination: 'false'
+      InstanceInitiatedShutdownBehavior: stop
+      ImageId:
+        Fn::FindInMap:
+          - AWSAMIRegionMap
+          - Ref: AWS::Region
+          - Fn::FindInMap:
+              - KeynameMap
+              - Ref: FTDVersion
+              - Ref: FTDLicType
+      InstanceType:
+        Ref: FTDInstanceType
+      KeyName:
+        Ref: KeyName
+      Monitoring: 'false'
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Join:
+              - ''
+              - - Ref: AWS::StackName
+                - '-FTDv'
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+      NetworkInterfaces:
+        - Description: Management interface
+          DeviceIndex: 0
+          NetworkInterfaceId:
+            Ref: eniFTDMgmt
+        - Description: Diag interface
+          DeviceIndex: 1
+          NetworkInterfaceId:
+            Ref: eniFTDdiag
+        - Description: Outside network interface
+          DeviceIndex: 2
+          NetworkInterfaceId:
+            Ref: eniFTDOutside
+        - Description: Inside network interface
+          DeviceIndex: 3
+          NetworkInterfaceId:
+            Ref: eniFTDInside    
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+            - ''
+            - - '{"AdminPassword":"Cisco@123","Hostname":"FTD-01-ENIFix"}'
+
+Outputs:
+  FTDVersion:
+    Description: Version of FTDv Instance created
+    Value:
+      Ref: FTDVersion
+  FTDLicType:
+    Description: License Type of FTDv Instance created
+    Value:
+      Ref: FTDLicType
+  FTDInstanceType:
+    Description: Type of FTDv Instance created
+    Value:
+      Ref: FTDInstanceType
+  FTDAddress:
+    Description: The external address of FTDv instance
+    Value:
+      Ref: eipFTDMgmt
